@@ -1,0 +1,173 @@
+# %%
+import pandas as pd
+
+# %%
+df = pd.read_csv('online_retail_II.csv')
+
+# %%
+df.head()
+
+# %%
+df.describe()
+
+# %%
+df.shape
+
+# %%
+df.isnull().sum()
+
+# %%
+df1 = df.dropna(subset='Customer ID')
+
+# %%
+df2 = df.dropna(subset=['Customer ID']).copy()
+
+# %%
+df2.isnull().sum()
+
+# %%
+df2['Is_Cancelled'] = df2['Invoice'].astype(str).str.startswith('C')
+
+# %%
+df2['Is_Cancelled'].sum()
+
+# %%
+df2['InvoiceDate'] = pd.to_datetime(df2['InvoiceDate'])
+
+# %%
+df2['InvoiceDate'] = pd.to_datetime(df2['InvoiceDate'])
+
+# %%
+df2['Customer ID'] = df2['Customer ID'].astype(int)
+
+# %%
+df2['Quantity'] = pd.to_numeric(df2['Quantity'])
+df2['Price'] = pd.to_numeric(df2['Price'])
+
+# %%
+df2['Total'] = df2['Quantity'] * df2['Price']
+
+# %%
+df2.dtypes
+
+# %%
+df2.drop_duplicates()
+
+# %%
+dim_customer = df2[['Customer ID', 'Country']].copy()
+
+
+# %%
+dim_customer = dim_customer.drop_duplicates(subset=['Customer ID'])
+
+
+# %%
+dim_customer.sum()
+
+# %%
+dim_product = df2[['StockCode', 'Description']].copy()
+
+# %%
+dim_product = dim_product.drop_duplicates(subset=['StockCode'])
+
+# %%
+fact_sales = df2[['Invoice', 'StockCode', 'Customer ID', 'InvoiceDate', 'Quantity', 'Price', 'Total']].copy()
+
+
+# %%
+dim_customer.to_csv('dim_customer.csv', index=False)
+dim_product.to_csv('dim_product.csv', index=False)
+fact_sales.to_csv('fact_sales.csv', index=False)
+
+
+# %%
+pd.__version__
+
+# %%
+import sys
+print(sys.version)
+
+# %%
+import datetime as dt
+
+
+df2['InvoiceDate'] = pd.to_datetime(df2['InvoiceDate'])
+
+
+today_date = df2['InvoiceDate'].max() + dt.timedelta(days=1)
+
+
+rfm = df2.groupby('Customer ID').agg({
+    'InvoiceDate': lambda x: (today_date - x.max()).days,
+    'Invoice': lambda x: x.nunique(),
+    'Total': 'sum' 
+})
+
+
+rfm.columns = ['Recency', 'Frequency', 'Monetary']
+
+print("Step 1 Complete: RFM metrics calculated from df2.")
+rfm.head()
+
+# %%
+
+rfm["R_Score"] = pd.qcut(rfm['Recency'], 5, labels=[5, 4, 3, 2, 1])
+rfm["F_Score"] = pd.qcut(rfm['Frequency'].rank(method="first"), 5, labels=[1, 2, 3, 4, 5])
+
+
+rfm['RF_Score'] = rfm['R_Score'].astype(str) + rfm['F_Score'].astype(str)
+
+
+def assign_segments(row):
+    score = row['RF_Score']
+    
+    if score in ['44', '45', '54', '55']:
+        return 'Champions'
+   
+    elif score in ['11', '12', '21', '22']:
+        return 'Hibernating'
+ 
+    else:
+        return 'Loyalists'
+
+rfm['Segment'] = rfm.apply(assign_segments, axis=1)
+
+print("Step 2 Complete: Customers categorized into 3 Tiers.")
+print(rfm['Segment'].value_counts())
+
+# %%
+
+audit = rfm.groupby('Segment').agg({
+    'Monetary': 'mean',
+    'Frequency': 'mean',
+    'Recency': 'mean',
+    'Segment': 'count'
+}).rename(columns={'Segment': 'Count'}).sort_values('Monetary', ascending=False)
+
+print("--- Business Validation Audit ---")
+print(audit.round(2))
+
+# %%
+
+pairs = df2[['Invoice', 'Description']].merge(
+    df2[['Invoice', 'Description']], 
+    on='Invoice'
+)
+
+
+pairs = pairs[pairs['Description_x'] != pairs['Description_y']]
+
+
+bundles = pairs.groupby(['Description_x', 'Description_y']).size().reset_index(name='Frequency')
+
+
+bundles = bundles.sort_values(by='Frequency', ascending=False)
+
+
+bundles.columns = ['Item A', 'Item B', 'Times Bought Together']
+
+print("Top 10 Simplest Product Bundles:")
+bundles.head(10)
+
+# %%
+
